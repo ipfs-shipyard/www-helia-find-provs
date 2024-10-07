@@ -41,60 +41,35 @@ const App = async () => {
     scrollToBottom(log)
   }
 
-  const runIdentify = async (cidString) => {
+  const runFindProvs = async (cidString) => {
     clearStatus()
 
     const signal = AbortSignal.timeout(10000)
     showStatus(`Searching for providers of ${cidString}...`)
     const cid = CID.parse(cidString)
+    let providers = new Map()
 
-    for await (const event of helia.libp2p.services.dht.findProviders(cid, {
-      signal
-    })) {
-
-
-      if (event.name === 'DIAL_PEER') {
-        showStatus(`${event.name} ${event.peer}`)
-      } else if (event.name === 'SEND_QUERY') {
-        showStatus(`${event.name} To: ${event.to} Query: ${event.messageName}`)
-      } else if (event.name === 'QUERY_ERROR') {
-        showStatus(`${event.name} To: ${event.from} ${event.error}`)
-      } else if (event.name === 'PEER_RESPONSE') {
-        showStatus(`${event.name} From: ${event.from} Query: ${event.messageName}`)
-        showStatus(`Closer: [`)
-
-        for (const peerInfo of event.closer) {
-          showStatus(`&nbsp;&nbsp;${peerInfo.id} [`)
-
-          for (const ma of peerInfo.multiaddrs) {
-            showStatus(`&nbsp;&nbsp;&nbsp;&nbsp;${ma.toString()} [`)
-          }
-
-          showStatus(`&nbsp;&nbsp;]`)
-        }
-
-        showStatus(`]`)
-        showStatus(`Providers: [`)
-
-        for (const peerInfo of event.providers) {
-          showStatus(`&nbsp;&nbsp;${peerInfo.id.toString()} [`)
-
-          for (const ma of peerInfo.multiaddrs) {
-            showStatus(`&nbsp;&nbsp;&nbsp;&nbsp;${ma.toString()} [`)
-          }
-
-          showStatus(`&nbsp;&nbsp;]`)
-        }
-
-        showStatus(`]`)
-      } else {
-        showStatus(`${event.name}`)
-        console.info(event)
-      }
+    const showProviders = () => {
+      clearStatus()
+      showStatus(`Providers:<pre>${JSON.stringify([...providers.values()], null, 2)}</pre>`, COLORS.success)
     }
 
-    clearStatus()
-    showStatus(`<pre>${JSON.stringify(data, null, 2)}</pre>`, COLORS.success)
+    Promise.resolve().then(async () => {
+      for await (const provider of helia.routing.findProviders(cid, {
+        signal
+      })) {
+        providers.set(provider.id.toString(), provider)
+        showProviders()
+      }
+    })
+      .catch(err => {
+        if (providers.size > 0) {
+          return
+        }
+
+        clearStatus()
+        showStatus(`Query failed:<pre>${err.message}</pre>`, COLORS.error)
+      })
   }
 
   // Event listeners
@@ -102,15 +77,15 @@ const App = async () => {
     e.preventDefault()
 
     const value = DOM.input().value ?? ''
-    let peerId = `${value}`.trim()
+    let cid = `${value}`.trim()
 
-    if (!peerId) {
-      showStatus(`Invalid PeerId or Multiaddr`, COLORS.error)
+    if (!cid) {
+      showStatus(`Invalid CID`, COLORS.error)
       return
     }
 
     try {
-      await runIdentify(peerId)
+      await runFindProvs(cid)
     } catch (err) {
       console.error('Error running identify', err)
       showStatus(`${err}`, COLORS.error)
